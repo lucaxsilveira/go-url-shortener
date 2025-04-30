@@ -8,10 +8,12 @@ services:
       - "8080:8080"
     environment:
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/urlshortener
+      - REDIS_URL=redis:6379
     networks:
       - monitoring
     depends_on:
       - postgres
+      - redis
 
   postgres:
     image: postgres:14-alpine
@@ -26,6 +28,16 @@ services:
       - postgres-data:/var/lib/postgresql/data
     networks:
       - monitoring
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - monitoring
+    volumes:
+      - redis-data:/data
 
   prometheus:
     image: prom/prometheus:latest
@@ -64,3 +76,4 @@ networks:
 volumes:
   grafana-data:
   postgres-data:
+  redis-data:

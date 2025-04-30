@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+	"url-shortener/cache"
 	"url-shortener/config"
 	"url-shortener/routes"
 	"url-shortener/utils"
@@ -20,6 +22,9 @@ func main() {
 	if err != nil {
 		utils.ErrorLogger.Fatalf("Falha ao inicializar o banco de dados: %v", err)
 	}
+
+	// Inicializa o monitor do Redis (verifica métricas a cada 15 segundos)
+	cache.StartRedisMonitor(15 * time.Second)
 
 	router := gin.Default()
 

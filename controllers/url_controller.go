@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"io/ioutil"
 	"net/http"
+	"url-shortener/cache"
 	"url-shortener/metrics"
+	"url-shortener/models"
 	"url-shortener/services"
 	"url-shortener/utils"
 
@@ -78,19 +80,72 @@ func (uc *UrlController) CreateShortUrl(c *gin.Context) {
 func (uc *UrlController) ListAllUrls(c *gin.Context) {
 	utils.LogRequest(c.Request.Method, c.Request.URL.Path, "")
 
+	// Inicia a medição do tempo total
+	stopTotal := utils.MeasureExecutionTime("ListAllUrls (total)")
+	defer func() {
+		duration := stopTotal()
+		// Adiciona o tempo de execução ao header da resposta
+		c.Header("X-Execution-Time", duration.String())
+	}()
+
+	// Chave única para o cache
+	cacheKey := "list:all:urls"
+
+	// Estrutura para armazenar o resultado
+	var result struct {
+		Urls      []models.Url `json:"urls"`
+		FromCache bool         `json:"from_cache"`
+	}
+
+	// Tenta recuperar do cache primeiro
+	stopCache := utils.MeasureExecutionTime("Cache retrieval")
+	found, err := cache.Get(cacheKey, &result)
+	cacheTime := stopCache()
+
+	if err != nil {
+		utils.LogError(err, "Erro ao verificar cache")
+		// Continua com a execução normal em caso de erro no cache
+	}
+
+	if found {
+		utils.InfoLogger.Printf("Dados recuperados do cache em %v", cacheTime)
+		result.FromCache = true
+		c.JSON(http.StatusOK, result)
+		return
+	}
+
+	// Se não encontrou no cache, busca do banco de dados
+	stopDB := utils.MeasureExecutionTime("Database query")
+
 	// Criar o serviço
 	service := services.NewShortenerService()
 
 	// Recuperar todas as URLs
 	urls, err := service.ListAllUrls()
+	dbTime := stopDB()
+
 	if err != nil {
 		utils.LogError(err, "Erro ao listar URLs")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao listar URLs"})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":          "Erro ao listar URLs",
+			"execution_time": dbTime.String(),
+		})
 		return
 	}
 
-	utils.InfoLogger.Printf("Retornando lista com %d URLs", len(urls))
-	c.JSON(http.StatusOK, gin.H{"urls": urls})
+	// Prepara o resultado
+	result.Urls = urls
+	result.FromCache = false
+
+	// Armazena no cache com TTL de 5 segundos
+	go func() {
+		if err := cache.Set(cacheKey, result, cache.DefaultTTL); err != nil {
+			utils.LogError(err, "Erro ao armazenar no cache")
+		}
+	}()
+
+	utils.InfoLogger.Printf("Retornando lista com %d URLs (do banco em %v)", len(urls), dbTime)
+	c.JSON(http.StatusOK, result)
 }
 
 func (uc *UrlController) GetOriginalUrl(c *gin.Context) {

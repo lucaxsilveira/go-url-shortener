@@ -59,7 +59,7 @@ docker-run: docker-build
 # Run all services with docker-compose
 docker-compose-up:
 	@echo "Starting all services with docker-compose..."
-	docker-compose up -d
+	docker-compose up --build -d
 
 # Restart all services (stop and start again)
 restart:
