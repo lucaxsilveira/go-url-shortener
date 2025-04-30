@@ -15,6 +15,7 @@ func SetupRoutes(router *gin.Engine) {
 	urlController := controllers.UrlController{}
 	router.POST("/shorten", urlController.CreateShortUrl)
 	router.GET("/url/:shortUrl", urlController.GetOriginalUrl)
+	router.GET("/urls", urlController.ListAllUrls) // Nova rota para listar todas as URLs
 
 	// Endpoint para métricas do Prometheus
 	router.GET("/metrics", metrics.PrometheusHandler())

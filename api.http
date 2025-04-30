@@ -2,9 +2,14 @@ POST http://0.0.0.0:8080/shorten HTTP/1.1
 content-type: application/json
 
 {
-    "original_url": "http://google.com"
+    "original_url": "http://google2.com"
 }
 
 #### 
 
-GET http://0.0.0.0:8080/url/IZAwy9 HTTP/1.1
+GET http://0.0.0.0:8080/url/R-3lOczt HTTP/1.1
+
+
+#### 
+
+GET http://0.0.0.0:8080/urls HTTP/1.1

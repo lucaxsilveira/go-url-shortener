@@ -2,23 +2,23 @@ package controllers
 
 import (
 	"bytes"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"url-shortener/metrics"
-	"url-shortener/models"
 	"url-shortener/services"
 	"url-shortener/utils"
 
 	"github.com/gin-gonic/gin"
 )
 
-type UrlController struct {
-	Service services.ShortenerService
+type UrlController struct{}
+
+type CreateUrlRequest struct {
+	OriginalUrl string `json:"original_url" binding:"required"`
 }
 
 func (uc *UrlController) CreateShortUrl(c *gin.Context) {
-	var url models.Url
+	var request CreateUrlRequest
 
 	// Log informações da requisição
 	c.Request.ParseForm()
@@ -32,28 +32,75 @@ func (uc *UrlController) CreateShortUrl(c *gin.Context) {
 		c.Request.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
 
-	if err := c.ShouldBindJSON(&url); err != nil {
+	if err := c.ShouldBindJSON(&request); err != nil {
 		utils.LogError(err, "Erro ao fazer bind do JSON")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	fmt.Println("Received URL:", url.OriginalUrl)
+	// Validar se a URL é válida
+	if !utils.IsValidUrl(request.OriginalUrl) {
+		utils.LogError(nil, "URL inválida: "+request.OriginalUrl)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "URL inválida"})
+		return
+	}
 
-	shortUrl := uc.Service.ShortenUrl(url.OriginalUrl)
-	utils.InfoLogger.Printf("URL encurtada gerada: %s -> %s", url.OriginalUrl, shortUrl)
+	// Criar o serviço
+	service := services.NewShortenerService()
+
+	// Encurtar a URL
+	shortUrl := service.ShortenUrl(request.OriginalUrl)
+	if shortUrl == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao encurtar URL"})
+		return
+	}
+
+	utils.InfoLogger.Printf("URL encurtada gerada: %s -> %s", request.OriginalUrl, shortUrl)
 
 	// Registra a métrica de URL encurtada
 	metrics.RecordURLShortened()
 
-	c.JSON(http.StatusCreated, gin.H{"short_url": shortUrl})
+	// Constrói a URL completa com o domínio do servidor
+	baseURL := c.Request.Host
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	fullShortURL := scheme + "://" + baseURL + "/url/" + shortUrl
+
+	c.JSON(http.StatusCreated, gin.H{
+		"short_url":    shortUrl,
+		"full_url":     fullShortURL,
+		"original_url": request.OriginalUrl,
+	})
+}
+
+func (uc *UrlController) ListAllUrls(c *gin.Context) {
+	utils.LogRequest(c.Request.Method, c.Request.URL.Path, "")
+
+	// Criar o serviço
+	service := services.NewShortenerService()
+
+	// Recuperar todas as URLs
+	urls, err := service.ListAllUrls()
+	if err != nil {
+		utils.LogError(err, "Erro ao listar URLs")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao listar URLs"})
+		return
+	}
+
+	utils.InfoLogger.Printf("Retornando lista com %d URLs", len(urls))
+	c.JSON(http.StatusOK, gin.H{"urls": urls})
 }
 
 func (uc *UrlController) GetOriginalUrl(c *gin.Context) {
 	shortUrl := c.Param("shortUrl")
 	utils.LogRequest(c.Request.Method, c.Request.URL.Path, "")
 
-	originalUrl, exists := uc.Service.RetrieveUrl(shortUrl)
+	// Criar o serviço
+	service := services.NewShortenerService()
+
+	originalUrl, exists := service.RetrieveUrl(shortUrl)
 	if !exists {
 		utils.LogError(nil, "URL não encontrada: "+shortUrl)
 

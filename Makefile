@@ -1,4 +1,4 @@
-.PHONY: build run clean test docker-build docker-run docker-compose-up deps
+.PHONY: build run clean test docker-build docker-run docker-compose-up deps restart
 
 # Go related variables
 BINARY_NAME=url-shortener
@@ -61,6 +61,14 @@ docker-compose-up:
 	@echo "Starting all services with docker-compose..."
 	docker-compose up -d
 
+# Restart all services (stop and start again)
+restart:
+	@echo "Stopping all services..."
+	docker stop $$(docker ps -q)
+	@echo "Rebuilding and starting all services..."
+	docker-compose up --build -d
+	@echo "Services restarted successfully!"
+
 # Show help
 help:
 	@echo "Available commands:"
@@ -73,3 +81,4 @@ help:
 	@echo "  make docker-build   - Build Docker image"
 	@echo "  make docker-run     - Run Docker container"
 	@echo "  make docker-compose-up - Start all services with docker-compose"
+	@echo "  make restart        - Stop, rebuild and restart all services with docker-compose"
