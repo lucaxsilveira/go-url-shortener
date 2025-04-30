@@ -1,0 +1,23 @@
+package utils
+
+import (
+	"crypto/rand"
+	"encoding/base64"
+	"net/url"
+)
+
+// GenerateShortUrl generates a unique short URL string.
+func GenerateShortUrl() (string, error) {
+	b := make([]byte, 6) // 6 bytes will give us a 8-character string
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// IsValidUrl checks if the provided string is a valid URL.
+func IsValidUrl(str string) bool {
+	_, err := url.ParseRequestURI(str)
+	return err == nil
+}
