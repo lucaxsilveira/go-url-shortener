@@ -65,7 +65,7 @@ docker-compose-up:
 
 docker-stop:
 	@echo "Stopping all services..."
-	docker stop $$(docker ps -q)
+	docker-compose down
 
 # Restart all services (stop and start again)
 restart:

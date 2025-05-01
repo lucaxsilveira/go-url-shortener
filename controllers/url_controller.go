@@ -2,7 +2,7 @@ package controllers
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"url-shortener/cache"
 	"url-shortener/metrics"
@@ -22,16 +22,24 @@ type CreateUrlRequest struct {
 func (uc *UrlController) CreateShortUrl(c *gin.Context) {
 	var request CreateUrlRequest
 
+	// Inicia a medição do tempo total
+	stopTotal := utils.MeasureExecutionTime("CreateShortUrl (total)")
+	defer func() {
+		duration := stopTotal()
+		// Adiciona o tempo de execução ao header da resposta
+		c.Header("X-Execution-Time", duration.String())
+	}()
+
 	// Log informações da requisição
 	c.Request.ParseForm()
 	utils.LogPostData(c.Request.Method, c.Request.URL.Path, c.Request.PostForm)
 
 	// Para logging completo do body JSON
-	bodyBytes, _ := ioutil.ReadAll(c.Request.Body)
+	bodyBytes, _ := io.ReadAll(c.Request.Body)
 	if len(bodyBytes) > 0 {
 		utils.LogRequest(c.Request.Method, c.Request.URL.Path, string(bodyBytes))
 		// Restaurar o body para que o bind funcione
-		c.Request.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -50,14 +58,22 @@ func (uc *UrlController) CreateShortUrl(c *gin.Context) {
 	// Criar o serviço
 	service := services.NewShortenerService()
 
+	// Medir o tempo da operação de encurtamento
+	stopShorten := utils.MeasureExecutionTime("URL shortening")
+
 	// Encurtar a URL
 	shortUrl := service.ShortenUrl(request.OriginalUrl)
+	shortenTime := stopShorten()
+
 	if shortUrl == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao encurtar URL"})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":          "Erro ao encurtar URL",
+			"execution_time": shortenTime.String(),
+		})
 		return
 	}
 
-	utils.InfoLogger.Printf("URL encurtada gerada: %s -> %s", request.OriginalUrl, shortUrl)
+	utils.InfoLogger.Printf("URL encurtada gerada: %s -> %s (em %v)", request.OriginalUrl, shortUrl, shortenTime)
 
 	// Registra a métrica de URL encurtada
 	metrics.RecordURLShortened()
@@ -71,9 +87,10 @@ func (uc *UrlController) CreateShortUrl(c *gin.Context) {
 	fullShortURL := scheme + "://" + baseURL + "/url/" + shortUrl
 
 	c.JSON(http.StatusCreated, gin.H{
-		"short_url":    shortUrl,
-		"full_url":     fullShortURL,
-		"original_url": request.OriginalUrl,
+		"short_url":      shortUrl,
+		"full_url":       fullShortURL,
+		"original_url":   request.OriginalUrl,
+		"execution_time": shortenTime.String(),
 	})
 }
 
@@ -93,8 +110,9 @@ func (uc *UrlController) ListAllUrls(c *gin.Context) {
 
 	// Estrutura para armazenar o resultado
 	var result struct {
-		Urls      []models.Url `json:"urls"`
-		FromCache bool         `json:"from_cache"`
+		Urls          []models.Url `json:"urls"`
+		FromCache     bool         `json:"from_cache"`
+		ExecutionTime string       `json:"execution_time"`
 	}
 
 	// Tenta recuperar do cache primeiro
@@ -136,6 +154,7 @@ func (uc *UrlController) ListAllUrls(c *gin.Context) {
 	// Prepara o resultado
 	result.Urls = urls
 	result.FromCache = false
+	result.ExecutionTime = dbTime.String()
 
 	// Armazena no cache com TTL de 5 segundos
 	go func() {
@@ -152,23 +171,41 @@ func (uc *UrlController) GetOriginalUrl(c *gin.Context) {
 	shortUrl := c.Param("shortUrl")
 	utils.LogRequest(c.Request.Method, c.Request.URL.Path, "")
 
+	// Inicia a medição do tempo total
+	stopTotal := utils.MeasureExecutionTime("GetOriginalUrl (total)")
+	defer func() {
+		duration := stopTotal()
+		// Adiciona o tempo de execução ao header da resposta
+		c.Header("X-Execution-Time", duration.String())
+	}()
+
 	// Criar o serviço
 	service := services.NewShortenerService()
 
+	// Medir o tempo da recuperação da URL
+	stopRetrieve := utils.MeasureExecutionTime("URL retrieval")
 	originalUrl, exists := service.RetrieveUrl(shortUrl)
+	retrieveTime := stopRetrieve()
+
 	if !exists {
 		utils.LogError(nil, "URL não encontrada: "+shortUrl)
 
 		// Registra a métrica de URL não encontrada
 		metrics.RecordURLNotFound()
 
-		c.JSON(http.StatusNotFound, gin.H{"error": "URL not found"})
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":          "URL not found",
+			"execution_time": retrieveTime.String(),
+		})
 		return
 	}
 
 	// Registra a métrica de acesso à URL
 	metrics.RecordURLAccess()
 
-	utils.InfoLogger.Printf("URL encontrada: %s -> %s", shortUrl, originalUrl)
-	c.JSON(http.StatusOK, gin.H{"original_url": originalUrl})
+	utils.InfoLogger.Printf("URL encontrada: %s -> %s (em %v)", shortUrl, originalUrl, retrieveTime)
+	c.JSON(http.StatusOK, gin.H{
+		"original_url":   originalUrl,
+		"execution_time": retrieveTime.String(),
+	})
 }
