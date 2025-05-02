@@ -2,29 +2,37 @@ package services
 
 import (
 	"fmt"
-	"url-shortener/config"
 	"url-shortener/models"
+	"url-shortener/repositories"
 	"url-shortener/utils"
-
-	"gorm.io/gorm"
 )
 
 type ShortenerService struct {
-	db *gorm.DB
+	repository repositories.URLRepository
 }
 
-func NewShortenerService() *ShortenerService {
-	return &ShortenerService{
-		db: config.GetDB(),
+func NewShortenerService() (*ShortenerService, error) {
+	repository, err := repositories.NewURLRepository()
+	if err != nil {
+		return nil, fmt.Errorf("erro ao criar repositório: %w", err)
 	}
+
+	return &ShortenerService{
+		repository: repository,
+	}, nil
 }
 
 func (s *ShortenerService) ListAllUrls() ([]models.Url, error) {
-	var urls []models.Url
-	result := s.db.Find(&urls)
-	if result.Error != nil {
-		utils.LogError(result.Error, "Erro ao buscar URLs do banco de dados")
-		return nil, result.Error
+	// Iniciar medição do tempo total
+	stopTotal := utils.MeasureExecutionTime("ListAllUrls (total)")
+	defer func() {
+		utils.InfoLogger.Printf("Tempo total de ListAllUrls: %v", stopTotal())
+	}()
+
+	urls, err := s.repository.List()
+	if err != nil {
+		utils.LogError(err, "Erro ao buscar URLs do banco de dados")
+		return nil, err
 	}
 
 	utils.InfoLogger.Printf("Recuperadas %d URLs do banco de dados", len(urls))
@@ -39,12 +47,25 @@ func (s *ShortenerService) ShortenUrl(originalUrl string) string {
 	}()
 
 	// Verificar se a URL já existe no banco de dados
+	// Para simplificar, usamos uma abordagem que não é dependente de banco de dados específico
+	// Recuperamos todas as URLs e procuramos por correspondência
 	stopCheck := utils.MeasureExecutionTime("URL existence check")
-	var existingUrl models.Url
-	result := s.db.Where("original_url = ?", originalUrl).First(&existingUrl)
+
+	urls, err := s.repository.List()
+	var existingUrl *models.Url
+
+	if err == nil {
+		for _, url := range urls {
+			if url.OriginalUrl == originalUrl {
+				existingUrl = &url
+				break
+			}
+		}
+	}
+
 	checkTime := stopCheck()
 
-	if result.RowsAffected > 0 {
+	if existingUrl != nil {
 		// Se a URL já existe, retorna o código curto existente
 		utils.InfoLogger.Printf("URL já existe no banco de dados: %s (verificado em %v)", existingUrl.ShortUrl, checkTime)
 		return existingUrl.ShortUrl
@@ -70,7 +91,7 @@ func (s *ShortenerService) ShortenUrl(originalUrl string) string {
 		Clicks:      0,
 	}
 
-	if err := s.db.Create(&url).Error; err != nil {
+	if err := s.repository.Create(&url); err != nil {
 		utils.LogError(err, fmt.Sprintf("Erro ao salvar URL no banco de dados (em %v)", stopSave()))
 		return ""
 	}
@@ -85,17 +106,21 @@ func (s *ShortenerService) ShortenUrl(originalUrl string) string {
 }
 
 func (s *ShortenerService) RetrieveUrl(shortUrl string) (string, bool) {
-	var url models.Url
+	// Iniciar medição do tempo total
+	stopTotal := utils.MeasureExecutionTime("RetrieveUrl (total)")
+	defer func() {
+		utils.InfoLogger.Printf("Tempo total de RetrieveUrl: %v", stopTotal())
+	}()
 
 	// Iniciar medição do tempo de consulta ao banco de dados
 	stopDB := utils.MeasureExecutionTime("Database lookup")
 
-	result := s.db.Where("short_url = ?", shortUrl).First(&url)
+	url, err := s.repository.GetByShortURL(shortUrl)
 
 	dbTime := stopDB()
 
-	if result.Error != nil {
-		utils.LogError(result.Error, fmt.Sprintf("URL não encontrada no banco de dados (em %v)", dbTime))
+	if err != nil {
+		utils.LogError(err, fmt.Sprintf("URL não encontrada no banco de dados (em %v)", dbTime))
 		return "", false
 	}
 
@@ -103,7 +128,10 @@ func (s *ShortenerService) RetrieveUrl(shortUrl string) (string, bool) {
 	stopUpdate := utils.MeasureExecutionTime("Click counter update")
 
 	// Incrementa o contador de cliques da URL
-	s.db.Model(&url).UpdateColumn("clicks", gorm.Expr("clicks + ?", 1))
+	err = s.repository.IncrementClicks(shortUrl)
+	if err != nil {
+		utils.LogError(err, "Erro ao incrementar contador de cliques")
+	}
 
 	updateTime := stopUpdate()
 

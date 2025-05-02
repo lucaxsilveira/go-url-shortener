@@ -6,14 +6,23 @@ services:
     container_name: url-shortener
     ports:
       - "8080:8080"
+    env_file: .env
     environment:
+      # Adicionando credenciais AWS fictícias para DynamoDB local
+      - AWS_ACCESS_KEY_ID=fakeAccessKey
+      - AWS_SECRET_ACCESS_KEY=fakeSecretKey
+      # Garantindo que as URLs do serviço usem os nomes dos contêineres no Docker
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/urlshortener
       - REDIS_URL=redis:6379
+      - AWS_ENDPOINT=http://dynamodb-local:8000
     networks:
       - monitoring
     depends_on:
       - postgres
       - redis
+      - dynamodb-local
+    volumes:
+      - ./.env:/app/.env
 
   postgres:
     image: postgres:14-alpine
@@ -38,6 +47,17 @@ services:
       - monitoring
     volumes:
       - redis-data:/data
+
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb-local
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal/data"
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+    networks:
+      - monitoring
 
   prometheus:
     image: prom/prometheus:latest
@@ -77,3 +97,4 @@ volumes:
   grafana-data:
   postgres-data:
   redis-data:
+  dynamodb-data:

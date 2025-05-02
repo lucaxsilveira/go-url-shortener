@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"url-shortener/cache"
+	"url-shortener/config"
 	"url-shortener/metrics"
 	"url-shortener/models"
 	"url-shortener/services"
@@ -16,9 +17,44 @@ import (
 type UrlController struct{}
 
 type CreateUrlRequest struct {
-	OriginalUrl string `json:"original_url" binding:"required"`
+	OriginalUrl string `json:"original_url" binding:"required" example:"https://www.exemplo.com.br/pagina-muito-grande-e-dificil-de-compartilhar"`
 }
 
+type CreateUrlResponse struct {
+	ShortUrl      string `json:"short_url" example:"abc123"`
+	FullUrl       string `json:"full_url" example:"http://localhost:8080/url/abc123"`
+	OriginalUrl   string `json:"original_url" example:"https://www.exemplo.com.br/pagina-muito-grande-e-dificil-de-compartilhar"`
+	ExecutionTime string `json:"execution_time" example:"12.345ms"`
+}
+
+type ErrorResponse struct {
+	Error         string `json:"error" example:"URL inválida"`
+	ExecutionTime string `json:"execution_time,omitempty" example:"5.678ms"`
+}
+
+type GetOriginalUrlResponse struct {
+	OriginalUrl   string `json:"original_url" example:"https://www.exemplo.com.br/pagina-muito-grande-e-dificil-de-compartilhar"`
+	ExecutionTime string `json:"execution_time" example:"3.456ms"`
+}
+
+type ListUrlsResponse struct {
+	Urls          []models.Url `json:"urls"`
+	FromCache     bool         `json:"from_cache" example:"true"`
+	ExecutionTime string       `json:"execution_time" example:"2.345ms"`
+	CacheEnabled  bool         `json:"cache_enabled" example:"true"`
+}
+
+// CreateShortUrl godoc
+// @Summary      Encurtar uma URL
+// @Description  Cria uma versão curta de uma URL longa
+// @Tags         urls
+// @Accept       json
+// @Produce      json
+// @Param        request body CreateUrlRequest true "URL original para encurtar"
+// @Success      201  {object}  CreateUrlResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
+// @Router       /shorten [post]
 func (uc *UrlController) CreateShortUrl(c *gin.Context) {
 	var request CreateUrlRequest
 
@@ -56,7 +92,12 @@ func (uc *UrlController) CreateShortUrl(c *gin.Context) {
 	}
 
 	// Criar o serviço
-	service := services.NewShortenerService()
+	service, err := services.NewShortenerService()
+	if err != nil {
+		utils.LogError(err, "Erro ao criar serviço de encurtamento")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro interno do servidor"})
+		return
+	}
 
 	// Medir o tempo da operação de encurtamento
 	stopShorten := utils.MeasureExecutionTime("URL shortening")
@@ -94,6 +135,14 @@ func (uc *UrlController) CreateShortUrl(c *gin.Context) {
 	})
 }
 
+// ListAllUrls godoc
+// @Summary      Listar todas as URLs
+// @Description  Retorna todas as URLs encurtadas no sistema
+// @Tags         urls
+// @Produce      json
+// @Success      200  {object}  ListUrlsResponse
+// @Failure      500  {object}  ErrorResponse
+// @Router       /urls [get]
 func (uc *UrlController) ListAllUrls(c *gin.Context) {
 	utils.LogRequest(c.Request.Method, c.Request.URL.Path, "")
 
@@ -105,38 +154,52 @@ func (uc *UrlController) ListAllUrls(c *gin.Context) {
 		c.Header("X-Execution-Time", duration.String())
 	}()
 
-	// Chave única para o cache
-	cacheKey := "list:all:urls"
-
 	// Estrutura para armazenar o resultado
 	var result struct {
 		Urls          []models.Url `json:"urls"`
 		FromCache     bool         `json:"from_cache"`
 		ExecutionTime string       `json:"execution_time"`
+		CacheEnabled  bool         `json:"cache_enabled"`
 	}
 
-	// Tenta recuperar do cache primeiro
-	stopCache := utils.MeasureExecutionTime("Cache retrieval")
-	found, err := cache.Get(cacheKey, &result)
-	cacheTime := stopCache()
+	// Define se o cache está ativado
+	result.CacheEnabled = config.IsRedisAvailable()
 
-	if err != nil {
-		utils.LogError(err, "Erro ao verificar cache")
-		// Continua com a execução normal em caso de erro no cache
+	// Se o Redis estiver disponível, tenta recuperar do cache
+	if result.CacheEnabled {
+		// Chave única para o cache
+		cacheKey := "list:all:urls"
+
+		// Tenta recuperar do cache primeiro
+		stopCache := utils.MeasureExecutionTime("Cache retrieval")
+		found, err := cache.Get(cacheKey, &result)
+		cacheTime := stopCache()
+
+		if err != nil && err != cache.ErrRedisUnavailable {
+			utils.LogError(err, "Erro ao verificar cache")
+			// Continua com a execução normal em caso de erro no cache
+		}
+
+		if found {
+			utils.InfoLogger.Printf("Dados recuperados do cache em %v", cacheTime)
+			result.FromCache = true
+			c.JSON(http.StatusOK, result)
+			return
+		}
+	} else {
+		utils.InfoLogger.Printf("Cache desativado: Redis não está disponível")
 	}
 
-	if found {
-		utils.InfoLogger.Printf("Dados recuperados do cache em %v", cacheTime)
-		result.FromCache = true
-		c.JSON(http.StatusOK, result)
-		return
-	}
-
-	// Se não encontrou no cache, busca do banco de dados
+	// Se não encontrou no cache ou o cache está desativado, busca do banco de dados
 	stopDB := utils.MeasureExecutionTime("Database query")
 
 	// Criar o serviço
-	service := services.NewShortenerService()
+	service, err := services.NewShortenerService()
+	if err != nil {
+		utils.LogError(err, "Erro ao criar serviço de encurtamento")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro interno do servidor"})
+		return
+	}
 
 	// Recuperar todas as URLs
 	urls, err := service.ListAllUrls()
@@ -156,17 +219,30 @@ func (uc *UrlController) ListAllUrls(c *gin.Context) {
 	result.FromCache = false
 	result.ExecutionTime = dbTime.String()
 
-	// Armazena no cache com TTL de 5 segundos
-	go func() {
-		if err := cache.Set(cacheKey, result, cache.DefaultTTL); err != nil {
-			utils.LogError(err, "Erro ao armazenar no cache")
-		}
-	}()
+	// Armazena no cache com TTL de 5 segundos (apenas se o Redis estiver disponível)
+	if result.CacheEnabled {
+		go func() {
+			err := cache.Set("list:all:urls", result, cache.DefaultTTL)
+			if err != nil && err != cache.ErrRedisUnavailable {
+				utils.LogError(err, "Erro ao armazenar no cache")
+			}
+		}()
+	}
 
 	utils.InfoLogger.Printf("Retornando lista com %d URLs (do banco em %v)", len(urls), dbTime)
 	c.JSON(http.StatusOK, result)
 }
 
+// GetOriginalUrl godoc
+// @Summary      Obter URL original
+// @Description  Retorna a URL original a partir do código curto
+// @Tags         urls
+// @Produce      json
+// @Param        shortUrl path string true "Código da URL curta" example:"abc123"
+// @Success      200  {object}  GetOriginalUrlResponse
+// @Failure      404  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
+// @Router       /url/{shortUrl} [get]
 func (uc *UrlController) GetOriginalUrl(c *gin.Context) {
 	shortUrl := c.Param("shortUrl")
 	utils.LogRequest(c.Request.Method, c.Request.URL.Path, "")
@@ -180,7 +256,12 @@ func (uc *UrlController) GetOriginalUrl(c *gin.Context) {
 	}()
 
 	// Criar o serviço
-	service := services.NewShortenerService()
+	service, err := services.NewShortenerService()
+	if err != nil {
+		utils.LogError(err, "Erro ao criar serviço de encurtamento")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro interno do servidor"})
+		return
+	}
 
 	// Medir o tempo da recuperação da URL
 	stopRetrieve := utils.MeasureExecutionTime("URL retrieval")

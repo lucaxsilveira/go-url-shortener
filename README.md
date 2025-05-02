@@ -6,6 +6,7 @@ Este projeto é um serviço de encurtamento de URLs construído com Go e o frame
 
 - Encurtamento de URLs longas para URLs curtas
 - Redirecionamento de URLs curtas para as originais
+- Suporte para múltiplos bancos de dados (PostgreSQL e DynamoDB)
 - Monitoramento completo com métricas usando Prometheus
 - Visualização de métricas em dashboards do Grafana
 - Logs estruturados e formatados
@@ -24,8 +25,13 @@ url-shortener
 ├── Makefile                # Comandos automatizados
 ├── prometheus.yml          # Configuração do Prometheus
 ├── README.md               # Documentação do projeto
+├── cache/                  # Sistema de cache Redis
+│   ├── cache.go
+│   └── redis_monitor.go
 ├── config/                 # Configurações da aplicação
-│   └── config.go           
+│   ├── config.go
+│   ├── database.go
+│   └── redis.go
 ├── controllers/            # Controladores HTTP
 │   └── url_controller.go
 ├── grafana/                # Configurações do Grafana
@@ -40,14 +46,50 @@ url-shortener
 │   └── prometheus.go
 ├── models/                 # Modelos de dados
 │   └── url.go
+├── repositories/           # Implementações de acesso a dados
+│   ├── url_repository.go          # Interface de repositório
+│   ├── factory.go                 # Fábrica de repositórios
+│   ├── postgres_repository.go     # Implementação para PostgreSQL
+│   └── dynamodb_repository.go     # Implementação para DynamoDB
 ├── routes/                 # Definições de rotas
 │   └── routes.go
+├── scripts/                # Scripts utilitários
+│   └── switch_db.sh        # Script para alternar entre bancos de dados
 ├── services/               # Lógica de negócios
 │   └── shortener_service.go
 └── utils/                  # Funções utilitárias
     ├── helper.go
     └── logger.go
 ```
+
+## Bancos de Dados Suportados
+
+O URL Shortener suporta dois bancos de dados diferentes:
+
+1. **PostgreSQL**: Banco de dados relacional SQL, usado como padrão
+2. **DynamoDB**: Banco de dados NoSQL gerenciado pela AWS (ou DynamoDB local para desenvolvimento)
+
+### Configuração de Ambiente
+
+O projeto utiliza arquivos `.env` para gerenciar as configurações de ambiente. Existem três arquivos de ambiente:
+
+- `.env`: Arquivo principal usado pela aplicação
+- `.env.postgres`: Configurações para o ambiente PostgreSQL
+- `.env.dynamodb`: Configurações para o ambiente DynamoDB
+
+Para alternar entre os ambientes facilmente:
+
+```bash
+# Alternar para ambiente PostgreSQL
+./scripts/use_env.sh postgres
+
+# Alternar para ambiente DynamoDB
+./scripts/use_env.sh dynamodb
+```
+
+Este script copia o arquivo de configuração específico para o arquivo `.env` principal, que é lido pela aplicação.
+
+Você também pode configurar manualmente o ambiente editando o arquivo `.env` diretamente.
 
 ## Métricas e Monitoramento
 
@@ -90,6 +132,38 @@ O projeto inclui monitoramento abrangente usando Prometheus e Grafana:
    - API de encurtamento de URL: `http://localhost:8080`
    - Prometheus: `http://localhost:9090`
    - Grafana: `http://localhost:3000` (usuário: admin, senha: admin)
+   - DynamoDB Local (interface web): Não disponível diretamente, use AWS CLI ou ferramentas de terceiros
+
+### Configuração Manual
+
+Se você deseja executar a aplicação localmente sem Docker:
+
+1. **Configure PostgreSQL ou DynamoDB local**
+   - Para PostgreSQL: Instale e configure um servidor PostgreSQL
+   - Para DynamoDB: Execute o DynamoDB local usando o Docker ou baixando o JAR diretamente da AWS
+
+2. **Configure as variáveis de ambiente:**
+   ```bash
+   # Configurações comuns
+   export PORT=8080
+   
+   # Para PostgreSQL
+   export DATABASE_TYPE=postgres
+   export DATABASE_URL=postgres://username:password@localhost:5432/urlshortener
+   
+   # Para DynamoDB
+   export DATABASE_TYPE=dynamodb
+   export AWS_REGION=us-east-1
+   export AWS_ENDPOINT=http://localhost:8000  # Para DynamoDB local
+   
+   # Para Redis (cache)
+   export REDIS_URL=localhost:6379
+   ```
+
+3. **Execute a aplicação:**
+   ```bash
+   go run main.go
+   ```
 
 ## Como Usar
 
@@ -141,17 +215,29 @@ O projeto inclui um Makefile para facilitar operações comuns:
 
 ## Serviços Docker
 
-O projeto utiliza três contêineres Docker orquestrados pelo Docker Compose:
+O projeto utiliza múltiplos contêineres Docker orquestrados pelo Docker Compose:
 
 1. **url-shortener**: Serviço principal da aplicação
    - Porta: 8080
    - Responsável pelo encurtamento e redirecionamento de URLs
 
-2. **prometheus**: Serviço de coleta de métricas
+2. **postgres**: Banco de dados PostgreSQL
+   - Porta: 5432
+   - Armazena dados de URLs quando o tipo de banco é PostgreSQL
+
+3. **dynamodb-local**: DynamoDB local para desenvolvimento
+   - Porta: 8000
+   - Implementação local do Amazon DynamoDB para desenvolvimento e testes
+
+4. **redis**: Serviço de cache
+   - Porta: 6379
+   - Usado para cache e métricas
+
+5. **prometheus**: Serviço de coleta de métricas
    - Porta: 9090
    - Coleta e armazena todas as métricas da aplicação
 
-3. **grafana**: Serviço de visualização de métricas
+6. **grafana**: Serviço de visualização de métricas
    - Porta: 3000
    - Fornece dashboards para visualizar as métricas coletadas pelo Prometheus
 

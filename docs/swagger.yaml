@@ -1,0 +1,158 @@
+definitions:
+  controllers.CreateUrlRequest:
+    properties:
+      original_url:
+        example: https://www.exemplo.com.br/pagina-muito-grande-e-dificil-de-compartilhar
+        type: string
+    required:
+    - original_url
+    type: object
+  controllers.CreateUrlResponse:
+    properties:
+      execution_time:
+        example: 12.345ms
+        type: string
+      full_url:
+        example: http://localhost:8080/url/abc123
+        type: string
+      original_url:
+        example: https://www.exemplo.com.br/pagina-muito-grande-e-dificil-de-compartilhar
+        type: string
+      short_url:
+        example: abc123
+        type: string
+    type: object
+  controllers.ErrorResponse:
+    properties:
+      error:
+        example: URL inválida
+        type: string
+      execution_time:
+        example: 5.678ms
+        type: string
+    type: object
+  controllers.GetOriginalUrlResponse:
+    properties:
+      execution_time:
+        example: 3.456ms
+        type: string
+      original_url:
+        example: https://www.exemplo.com.br/pagina-muito-grande-e-dificil-de-compartilhar
+        type: string
+    type: object
+  controllers.ListUrlsResponse:
+    properties:
+      cache_enabled:
+        example: true
+        type: boolean
+      execution_time:
+        example: 2.345ms
+        type: string
+      from_cache:
+        example: true
+        type: boolean
+      urls:
+        items:
+          $ref: '#/definitions/models.Url'
+        type: array
+    type: object
+  models.Url:
+    properties:
+      clicks:
+        description: Contador de acessos à URL
+        example: 42
+        type: integer
+      created_at:
+        example: "2025-05-01T12:34:56Z"
+        type: string
+      id:
+        example: 1
+        type: integer
+      original_url:
+        example: https://www.exemplo.com.br/pagina-muito-grande-e-dificil-de-compartilhar
+        type: string
+      short_url:
+        example: abc123
+        type: string
+      updated_at:
+        example: "2025-05-01T12:34:56Z"
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /shorten:
+    post:
+      consumes:
+      - application/json
+      description: Cria uma versão curta de uma URL longa
+      parameters:
+      - description: URL original para encurtar
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.CreateUrlRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/controllers.CreateUrlResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      summary: Encurtar uma URL
+      tags:
+      - urls
+  /url/{shortUrl}:
+    get:
+      description: Retorna a URL original a partir do código curto
+      parameters:
+      - description: Código da URL curta
+        in: path
+        name: shortUrl
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.GetOriginalUrlResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      summary: Obter URL original
+      tags:
+      - urls
+  /urls:
+    get:
+      description: Retorna todas as URLs encurtadas no sistema
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.ListUrlsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controllers.ErrorResponse'
+      summary: Listar todas as URLs
+      tags:
+      - urls
+swagger: "2.0"

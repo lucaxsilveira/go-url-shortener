@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 	"url-shortener/config"
@@ -13,6 +14,11 @@ import (
 const (
 	// DefaultTTL é o tempo padrão de expiração do cache
 	DefaultTTL = 5 * time.Second
+)
+
+var (
+	// ErrRedisUnavailable é retornado quando o Redis não está disponível
+	ErrRedisUnavailable = errors.New("redis não está disponível")
 )
 
 // getKeyPrefix extrai o prefixo da chave para fins de monitoramento
@@ -26,6 +32,12 @@ func getKeyPrefix(key string) string {
 
 // Set armazena um valor no cache com TTL específico
 func Set(key string, value interface{}, ttl time.Duration) error {
+	// Verifica se o Redis está disponível
+	if !config.IsRedisAvailable() {
+		utils.InfoLogger.Printf("Cache desativado: Redis não está disponível")
+		return ErrRedisUnavailable
+	}
+
 	startTime := time.Now()
 	keyPrefix := getKeyPrefix(key)
 	metrics.RecordRedisCacheOperation()
@@ -58,6 +70,12 @@ func Set(key string, value interface{}, ttl time.Duration) error {
 
 // Get recupera um valor do cache
 func Get(key string, result interface{}) (bool, error) {
+	// Verifica se o Redis está disponível
+	if !config.IsRedisAvailable() {
+		utils.InfoLogger.Printf("Cache desativado: Redis não está disponível")
+		return false, ErrRedisUnavailable
+	}
+
 	startTime := time.Now()
 	keyPrefix := getKeyPrefix(key)
 	metrics.RecordRedisCacheOperation()
@@ -96,6 +114,12 @@ func Get(key string, result interface{}) (bool, error) {
 
 // Delete remove um valor do cache
 func Delete(key string) error {
+	// Verifica se o Redis está disponível
+	if !config.IsRedisAvailable() {
+		utils.InfoLogger.Printf("Cache desativado: Redis não está disponível")
+		return ErrRedisUnavailable
+	}
+
 	startTime := time.Now()
 	keyPrefix := getKeyPrefix(key)
 	metrics.RecordRedisCacheOperation()

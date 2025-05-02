@@ -13,10 +13,32 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+var monitorActive bool = false
+
 // StartRedisMonitor inicia um monitoramento periódico do Redis
 func StartRedisMonitor(interval time.Duration) {
+	// Verifica se o Redis está disponível antes de iniciar o monitor
+	if !config.IsRedisAvailable() {
+		utils.InfoLogger.Println("Monitor de Redis não iniciado: Redis não está disponível")
+		return
+	}
+
+	// Evita iniciar múltiplos monitores
+	if monitorActive {
+		return
+	}
+
+	monitorActive = true
 	go func() {
 		for {
+			// Verifica se o Redis ainda está disponível
+			if !config.IsRedisAvailable() {
+				utils.InfoLogger.Println("Monitor de Redis pausado: Redis não está disponível")
+				metrics.SetRedisUp(false)
+				time.Sleep(interval)
+				continue
+			}
+
 			monitorRedisHealth()
 			time.Sleep(interval)
 		}

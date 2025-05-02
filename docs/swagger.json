@@ -1,0 +1,235 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "contact": {}
+    },
+    "paths": {
+        "/shorten": {
+            "post": {
+                "description": "Cria uma versão curta de uma URL longa",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "urls"
+                ],
+                "summary": "Encurtar uma URL",
+                "parameters": [
+                    {
+                        "description": "URL original para encurtar",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controllers.CreateUrlRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.CreateUrlResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/url/{shortUrl}": {
+            "get": {
+                "description": "Retorna a URL original a partir do código curto",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "urls"
+                ],
+                "summary": "Obter URL original",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Código da URL curta",
+                        "name": "shortUrl",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.GetOriginalUrlResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/urls": {
+            "get": {
+                "description": "Retorna todas as URLs encurtadas no sistema",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "urls"
+                ],
+                "summary": "Listar todas as URLs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ListUrlsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "controllers.CreateUrlRequest": {
+            "type": "object",
+            "required": [
+                "original_url"
+            ],
+            "properties": {
+                "original_url": {
+                    "type": "string",
+                    "example": "https://www.exemplo.com.br/pagina-muito-grande-e-dificil-de-compartilhar"
+                }
+            }
+        },
+        "controllers.CreateUrlResponse": {
+            "type": "object",
+            "properties": {
+                "execution_time": {
+                    "type": "string",
+                    "example": "12.345ms"
+                },
+                "full_url": {
+                    "type": "string",
+                    "example": "http://localhost:8080/url/abc123"
+                },
+                "original_url": {
+                    "type": "string",
+                    "example": "https://www.exemplo.com.br/pagina-muito-grande-e-dificil-de-compartilhar"
+                },
+                "short_url": {
+                    "type": "string",
+                    "example": "abc123"
+                }
+            }
+        },
+        "controllers.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "URL inválida"
+                },
+                "execution_time": {
+                    "type": "string",
+                    "example": "5.678ms"
+                }
+            }
+        },
+        "controllers.GetOriginalUrlResponse": {
+            "type": "object",
+            "properties": {
+                "execution_time": {
+                    "type": "string",
+                    "example": "3.456ms"
+                },
+                "original_url": {
+                    "type": "string",
+                    "example": "https://www.exemplo.com.br/pagina-muito-grande-e-dificil-de-compartilhar"
+                }
+            }
+        },
+        "controllers.ListUrlsResponse": {
+            "type": "object",
+            "properties": {
+                "cache_enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "execution_time": {
+                    "type": "string",
+                    "example": "2.345ms"
+                },
+                "from_cache": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "urls": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Url"
+                    }
+                }
+            }
+        },
+        "models.Url": {
+            "type": "object",
+            "properties": {
+                "clicks": {
+                    "description": "Contador de acessos à URL",
+                    "type": "integer",
+                    "example": 42
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2025-05-01T12:34:56Z"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "original_url": {
+                    "type": "string",
+                    "example": "https://www.exemplo.com.br/pagina-muito-grande-e-dificil-de-compartilhar"
+                },
+                "short_url": {
+                    "type": "string",
+                    "example": "abc123"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2025-05-01T12:34:56Z"
+                }
+            }
+        }
+    }
+}

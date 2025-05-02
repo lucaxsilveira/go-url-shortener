@@ -1,4 +1,4 @@
-.PHONY: build run clean test docker-build docker-run docker-compose-up deps restart
+.PHONY: build run clean test docker-build docker-run docker-compose-up deps restart swagger swagger-ui
 
 # Go related variables
 BINARY_NAME=url-shortener
@@ -46,6 +46,21 @@ test:
 	@echo "Testing..."
 	go test -v ./...
 
+# Generate Swagger documentation
+swagger:
+	@echo "Generating Swagger documentation..."
+	@if ! command -v swag &> /dev/null; then \
+		echo "Installing swag..."; \
+		go install github.com/swaggo/swag/cmd/swag@latest; \
+	fi
+	swag init --parseDependency
+
+# Run application with Swagger UI enabled
+swagger-ui: swagger build
+	@echo "Running with Swagger UI enabled..."
+	@echo "Access Swagger UI at: http://localhost:8080/swagger/index.html"
+	./$(BINARY_NAME)
+
 # Build docker image
 docker-build:
 	@echo "Building Docker image..."
@@ -65,10 +80,18 @@ docker-compose-up:
 
 docker-stop:
 	@echo "Stopping all services..."
-	docker-compose down
+	docker stop $$(docker ps -q)
+
+restart-app:
+	@echo "Stopping the application..."
+	docker stop $$(docker ps -q --filter "name=$(BINARY_NAME)")
+	@echo "Rebuilding and starting the application..."
+	docker-compose up --build -d
+	@echo "Application restarted successfully!"
+
 
 # Restart all services (stop and start again)
-restart:
+restart-all:
 	@echo "Stopping all services..."
 	docker stop $$(docker ps -q)
 	@echo "Rebuilding and starting all services..."
@@ -84,6 +107,8 @@ help:
 	@echo "  make dev            - Run with hot reload (requires air)"
 	@echo "  make clean          - Remove build artifacts"
 	@echo "  make test           - Run tests"
+	@echo "  make swagger        - Generate Swagger documentation"
+	@echo "  make swagger-ui     - Run application with Swagger UI enabled"
 	@echo "  make docker-build   - Build Docker image"
 	@echo "  make docker-run     - Run Docker container"
 	@echo "  make docker-compose-up - Start all services with docker-compose"
